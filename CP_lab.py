@@ -7,12 +7,19 @@ import math
 import datetime as dt
 import textwrap
 from mpl_toolkits.mplot3d.axes3d import Axes3D
+from astropy.coordinates import SkyCoord
 %matplotlib inline
+
+#%% Constants
+c=3*(10**5) #speed of light km/s
+R=1.5*(10**8) # km AU
+PSR_EcLon=83.98316667 #PSR Ecliptic long
+PSR_EcLat=-1.29544444 #PSR Ecliptic lat
 
 #%% path file for data
 path="/Users/federicostachurski/Desktop/ASTRO_Lab_PSR-CRAB/data/"
-#%%Read Joerdell Bank observations
 
+#%%Read Joerdell Bank observations
 jb_data=np.loadtxt(path+"JB_data_1992.cpx")
 
 #%%function for opneing data files
@@ -290,12 +297,12 @@ plt.show()
 print(slope_jb)
 
 #%% One plot
-plt.plot(jd_to_mjd(Jdate_array),Freq_array*1.0001,'ro')
+plt.plot(jd_to_mjd(Jdate_array),Freq_array,'ro')
 ax = plt.gca()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
-ax.errorbar(jd_to_mjd(Jdate_array), Freq_array*1.0001, 1/(4096*10.24),fmt='ro')
+ax.errorbar(jd_to_mjd(Jdate_array), Freq_array, 1/(4096*10.24),fmt='ro')
 plt.grid(True)
-slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), Freq_array*1.0001, 1)
+slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), Freq_array, 1)
 plt.plot(jd_to_mjd(Jdate_array),(slope*jd_to_mjd(Jdate_array))+intercept, 'g')
 plt.plot(jb_data[:,1],jb_data[:,0],'bo-')
 ax = plt.gca()
@@ -325,6 +332,7 @@ def read_ephe(c):
         column.append(float(newArr[c]))
     return column
     ephe.close()
+
 jdate_ephe=read_ephe(0)
 RA_ephe=read_ephe(1)
 DEC_ephe=read_ephe(2)
@@ -345,18 +353,8 @@ while i<len(date_eph):
     del date_eph[i][-1]
     i=i+1
 print(date_eph[770])
+
 #%%check position of dates in ephemeris
-
-i=0
-while i<len(date_eph) :
-    if date_eph[i] == [1992, 3, 5, 12, 46]:
-        print(i)
-    i=i+1
-
-#%%
-
-
-
 k=0
 pos=np.zeros(7)
 while k<=6:
@@ -367,11 +365,73 @@ while k<=6:
         j=j+1
     k=k+1    
 
+pos=list(map(int,pos))
 print(pos)
 
+#%% get values corresponding to dates
+Vobs_ephe_3 = Vobs_ephe[pos[0]]
+EcLON_ephe_3 = EcLON_ephe[pos[0]]
+Vobs_ephe_4 = Vobs_ephe[pos[1]]
+EcLON_ephe_4 = EcLON_ephe[pos[1]]
+Vobs_ephe_5 = Vobs_ephe[pos[2]]
+EcLON_ephe_5 = EcLON_ephe[pos[2]]
+Vobs_ephe_6 = Vobs_ephe[pos[3]]
+EcLON_ephe_6 = EcLON_ephe[pos[3]]
+Vobs_ephe_7 = Vobs_ephe[pos[4]]
+EcLON_ephe_7 = EcLON_ephe[pos[4]]
+Vobs_ephe_8 = Vobs_ephe[pos[5]]
+EcLON_ephe_8 = EcLON_ephe[pos[5]]
+Vobs_ephe_9 = Vobs_ephe[pos[6]]
+EcLON_ephe_9 = EcLON_ephe[pos[6]]
 
+print(np.cos(EcLON_ephe_3*0.017453292519),Vobs_ephe_3)
 
+#%% Doppler shift f=f_obs*(1/1-[vcos(wt-lambda)/c])
+def doppler(freq,velocity,angle):
+    factor = 1 - (velocity/c)*np.sin((angle-83.9831667)*0.017453292519)
+    corr_freq = freq * factor
+    return corr_freq
 
+corr_freq_3=doppler(Freq_array[0],np.asarray(Vobs_ephe_3),np.asarray(EcLON_ephe_3))
+corr_freq_4=doppler(Freq_array[1],np.asarray(Vobs_ephe_4),np.asarray(EcLON_ephe_4))
+corr_freq_5=doppler(Freq_array[2],np.asarray(Vobs_ephe_5),np.asarray(EcLON_ephe_5))
+corr_freq_6=doppler(Freq_array[3],np.asarray(Vobs_ephe_6),np.asarray(EcLON_ephe_6))
+corr_freq_7=doppler(Freq_array[4],np.asarray(Vobs_ephe_7),np.asarray(EcLON_ephe_7))
+corr_freq_8=doppler(Freq_array[5],np.asarray(Vobs_ephe_8),np.asarray(EcLON_ephe_8))
+corr_freq_9=doppler(Freq_array[6],np.asarray(Vobs_ephe_9),np.asarray(EcLON_ephe_9))
+
+i=0
+corr_freq_arr=np.zeros(7)
+while i<7:
+    corr_freq_arr[i]=vars()['corr_freq_'+str(i+3)]
+    i=i+1
+
+print(corr_freq_arr)
+
+#%% plot correct (doppler) frequency
+plt.plot(jd_to_mjd(Jdate_array),corr_freq_arr,'ro-')
+ax = plt.gca()
+ax.get_yaxis().get_major_formatter().set_useOffset(False)
+ax.errorbar(jd_to_mjd(Jdate_array), corr_freq_arr, 1/(4096*10.24),fmt='ro')
+plt.plot(jd_to_mjd(Jdate_array),Freq_array,'go-')
+ax = plt.gca()
+ax.get_yaxis().get_major_formatter().set_useOffset(False)
+ax.errorbar(jd_to_mjd(Jdate_array), Freq_array, 1/(4096*10.24),fmt='go')
+plt.grid(True)
+slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), corr_freq_arr, 1)
+plt.plot(jd_to_mjd(Jdate_array),(slope*jd_to_mjd(Jdate_array))+intercept, 'g')
+plt.plot(jb_data[:,1],jb_data[:,0],'bo-')
+ax = plt.gca()
+ax.get_yaxis().get_major_formatter().set_useOffset(False)
+textstr = '\n'.join((
+r"Slope JB = "+str(float(slope_jb)),
+r"Intercept JB = "+str(float(intercept_jb)),
+r"Slope Data (corr)= " +str(float(slope)),
+r"Intercept Data (corr) = " +str(float(intercept))))
+plt.text(0.7,0.4, textstr,fontsize=11,horizontalalignment='left',transform=ax.transAxes,bbox=dict(facecolor='white', alpha=1))
+plt.ylabel('Frequency [Hz]')
+plt.xlabel('MJD')
+plt.title('Frquency Slow down (Doppler corrected)')
 
 
 
@@ -382,7 +442,7 @@ print(pos)
 #%% likelyhood functions
 
 err = 1/(4096*10.24)
-Freq_corr = Freq_array*1.0001
+Freq_corr = corr_freq_arr
 epoch = 3 # the index of the epoch of the solution
 t = (jd_to_mjd(Jdate_array) - jd_to_mjd(Jdate_array[epoch]))*24*3600
 best_f= np.polyfit(t-t[epoch],Freq_corr,1)
