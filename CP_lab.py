@@ -7,14 +7,27 @@ import math
 import datetime as dt
 import textwrap
 from mpl_toolkits.mplot3d.axes3d import Axes3D
+from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy.coordinates import solar_system_ephemeris, EarthLocation
+from astropy.coordinates import get_body
+from astropy.time import Time
+solar_system_ephemeris.set('URL: https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de200.bsp')
 %matplotlib inline
 
 #%% Constants
-c=3*(10**5) #speed of light km/s
-R=1.5*(10**8) # km AU
-PSR_EcLon=83.98316667 #PSR Ecliptic long
-PSR_EcLat=-1.29544444 #PSR Ecliptic lat
+c = 3*(10**5) #speed of light km/s
+R = 1.5*(10**8) # km AU
+PSR_EcLon = 83.98316667 #PSR Ecliptic long
+PSR_EcLat = -1.29544444 #PSR Ecliptic lat
+DM = 56.77118 #Dispersion measure
+err_DM = 2.400e-04
+DM_const = (4.15*(10**3)) #constant for t_dispersion
+Angles = SkyCoord('05 34 31.973 +22 00 52.06',unit=(u.hourangle, u.deg), frame='icrs')  #Right Ascenscion J (SSB) Crab
+RAJ = Angles.ra.value # err_RAJ = 5.000e-03  #error RA
+DECJ = Angles.dec.value  # err_DECJ = 6.000e-02 #error DEC
+Geo_coord=[52.16361111, 0.3722222] #One Mile telescope coordinates
+loc=astropy.coordinates.EarthLocation.from_geodetic(0.3722222, 52.16361111, 22)
 
 #%% path file for data
 path="/Users/federicostachurski/Desktop/ASTRO_Lab_PSR-CRAB/data/"
@@ -71,8 +84,8 @@ def signal_plt(data,par,num,inx):
         textstr = '\n'.join((
         r"Obs. points = "+str(n),
         r"Time int. = " +str(T)))
-        plt.text((n*T)+10000, 200, textstr, fontsize=20,
-            verticalalignment='top')
+        plt.text(1.1, 0.7, textstr, fontsize=15,
+            verticalalignment='top',transform=ax.transAxes)
         plt.title('data_'+num)
     elif inx is 1:
         plt.plot(t_x,data[:,1],'c')
@@ -82,8 +95,8 @@ def signal_plt(data,par,num,inx):
         textstr = '\n'.join((
         r"Obs. points = "+str(n),
         r"Time int. = " +str(T)))
-        plt.text(41000, 200, textstr, fontsize=20,
-            verticalalignment='top')
+        plt.text(1.1, 0.7, textstr, fontsize=15,
+            verticalalignment='top',transform=ax.transAxes)
         plt.title('data_'+num)
     else: 
         print('No Inx was submitted, signal_plt requires 4 arg, or number inx not 0 or 1')
@@ -100,6 +113,7 @@ Signal_P6=signal_plt(data_6,par_6,'6',0)
 Signal_P7=signal_plt(data_7,par_7,'7',0)
 Signal_P8=signal_plt(data_8,par_8,'8',0)
 Signal_P9=signal_plt(data_9,par_9,'9',0)
+
 
 #%%FFT (function), takes data col 1 and 2, makes complex num with 
 #data, runs complex data in FFT, returns FFT, plts FFT of Signals
@@ -284,17 +298,7 @@ plt.show()
 # print(jd_to_date(Jdate_array))
 
 print(slope)
-#%% Jordell Bank data plot
-plt.plot(jb_data[:,1],jb_data[:,0],'bo-')
-ax = plt.gca()
-ax.get_yaxis().get_major_formatter().set_useOffset(False)
-slope_jb, intercept_jb = np.polyfit(jb_data[:,1], jb_data[:,0], 1)
-plt.grid(True)
-plt.ylabel('Frequency [Hz]')
-plt.xlabel('MJD')
-plt.title('Frquency Slow down, Jordell Bank Observatory')
-plt.show()
-print(slope_jb)
+
 
 #%% One plot
 plt.plot(jd_to_mjd(Jdate_array),Freq_array,'ro')
@@ -316,6 +320,87 @@ plt.text(0.8,0.4, textstr,fontsize=11,horizontalalignment='left',transform=ax.tr
 plt.ylabel('Frequency [Hz]')
 plt.xlabel('MJD')
 plt.title('Frquency Slow down')
+
+#%% read vector ephemeris (VECTOR) ORBIT
+#read Earth-Sun Ephemeris from 1992/3/4 - 1992/3/17
+ephe_v_vector=np.genfromtxt(path+"horizons_results_vector.txt", delimiter=',')
+
+v_x_ephe_vector = ephe_v_vector[:,5]
+v_y_ephe_vector = ephe_v_vector[:,6]
+v_z_ephe_vector = ephe_v_vector[:,7]
+jd_vector = ephe_v_vector[:,0]
+
+
+#%% read vector ephemeris (VECTOR) ROTATIONAL
+time=np.array(Jdate_array)
+t=astropy.time.Time(t, format='jd')
+c=astropy.coordinates.get_body('Earth', t , loc)
+icrs = c.transform_to('icrs')
+rotational_vel=icrs.obsgeovel
+vel_rot=rotational_vel.get_xyz()
+print(vel_rot.value)
+vel_rot_x = vel_rot.value[0]
+vel_rot_y = vel_rot.value[1]
+vel_rot_z = vel_rot.value[2]
+
+#%% fix 4th elemtn of vectors 
+vel_rot_x[3] = np.array(vel_rot_x[2] + vel_rot_x[4])/2
+vel_rot_y[3] = np.array(vel_rot_y[2] + vel_rot_y[4])/2
+vel_rot_z[3] = np.array(vel_rot_z[2] + vel_rot_z[4])/2
+#print(vel_rot_x,vel_rot_y,vel_rot_z)
+
+#%% convert into date (VECTOR) orbit
+date_eph_vector=list(map(jd_to_date,jd_vector))
+date_eph_vector=list(map(list, date_eph_vector))
+
+#%% print(date_eph_vector)
+i=0
+while i<len(date_eph_vector):
+    if date_eph_vector[i][5] == 59 :
+        date_eph_vector[i][4] = date_eph_vector[i][4] + 1
+    del date_eph_vector[i][-1]
+    i=i+1
+print(date_eph_vector)
+
+#%% check position (VECTOR)
+k=0
+pos_vector=np.zeros(7)
+while k<=6:
+    j=0
+    while j<len(date_eph_vector):
+        if date_eph_vector[j] == vars()['date_'+str(k+3)]:
+            pos_vector[k]=j
+        j=j+1
+    k=k+1    
+
+pos_vector=list(map(int,pos_vector))
+print(pos_vector)
+
+#%% vectors at dates 
+v_3 = [v_x[pos_vector[0]], v_y[pos_vector[0]],v_z[pos_vector[0]]]
+v_4 = [v_x[pos_vector[1]], v_y[pos_vector[1]],v_z[pos_vector[1]]]
+v_5 = [v_x[pos_vector[2]], v_y[pos_vector[2]],v_z[pos_vector[2]]]
+v_6 = [v_x[pos_vector[3]], v_y[pos_vector[3]],v_z[pos_vector[3]]]
+v_7 = [v_x[pos_vector[4]], v_y[pos_vector[4]],v_z[pos_vector[4]]]
+v_8 = [v_x[pos_vector[5]], v_y[pos_vector[5]],v_z[pos_vector[5]]]
+v_9 = [v_x[pos_vector[6]], v_y[pos_vector[6]],v_z[pos_vector[6]]]
+
+
+v_x
+
+
+
+
+
+#%% Total vector (v_orb + v_rot)
+tot_v_x = v_x_ephe_vector + vel_rot_x
+tot_v_y = v_y_ephe_vector + vel_rot_y
+tot_v_z = v_z_ephe_vector + vel_rot_z
+print(v_x_ephe_vector,vel_rot_x,tot_v_x)
+
+
+#%% unit vector position Crab Nebula 
+
 
 #%% Pulsar timing corrections
 #read Earth-Sun Ephemeris from 1992/3/4 - 1992/3/17
@@ -386,11 +471,33 @@ EcLON_ephe_9 = EcLON_ephe[pos[6]]
 
 print(np.cos(EcLON_ephe_3*0.017453292519),Vobs_ephe_3)
 
+#%% TOA delays (DM and Roemer) (PROBLEM)
+def time_delays(freq, angle): 
+    t_r = (R/c)*np.cos((np.asarray(angle)-PSR_EcLon)*0.017453292519)*np.cos(PSR_EcLat*0.017453292519)
+    t_dm= DM_const*(1/(freq**2))*DM
+    f_err=[1/t_r, 1/t_dm]
+    return f_err #returns frequency errors due to Roemer and DM
+
+f_delay_3 = time_delays(corr_freq_arr[0],EcLON_ephe_3)
+f_delay_4 = time_delays(corr_freq_arr[1],EcLON_ephe_4)
+f_delay_5 = time_delays(corr_freq_arr[2],EcLON_ephe_5)
+f_delay_6 = time_delays(corr_freq_arr[3],EcLON_ephe_6)
+f_delay_7 = time_delays(corr_freq_arr[4],EcLON_ephe_7)
+f_delay_8 = time_delays(corr_freq_arr[5],EcLON_ephe_8)
+f_delay_9 = time_delays(corr_freq_arr[6],EcLON_ephe_9)
+
+print(f_delay_3,f_delay_4,f_delay_5,f_delay_6,f_delay_7,f_delay_8,f_delay_9)
+
+
+
+
 #%% Doppler shift f=f_obs*(1/1-[vcos(wt-lambda)/c])
+#maybe add 0.46 in velocity due to earth's rotation (LOS)
 def doppler(freq,velocity,angle):
-    factor = 1 - (velocity/c)*np.sin((angle-83.9831667)*0.017453292519)
+    factor_1 = 1 - ((velocity)/c)*np.sin((angle-83.9831667)*0.017453292519)
     corr_freq = freq * factor
     return corr_freq
+
 
 corr_freq_3=doppler(Freq_array[0],np.asarray(Vobs_ephe_3),np.asarray(EcLON_ephe_3))
 corr_freq_4=doppler(Freq_array[1],np.asarray(Vobs_ephe_4),np.asarray(EcLON_ephe_4))
@@ -400,6 +507,13 @@ corr_freq_7=doppler(Freq_array[4],np.asarray(Vobs_ephe_7),np.asarray(EcLON_ephe_
 corr_freq_8=doppler(Freq_array[5],np.asarray(Vobs_ephe_8),np.asarray(EcLON_ephe_8))
 corr_freq_9=doppler(Freq_array[6],np.asarray(Vobs_ephe_9),np.asarray(EcLON_ephe_9))
 
+# #%% dot profuct
+# angles = [np.cos((np.asarray(EcLON_ephe_3)-83.9831667)*0.017453292519),  np.sin((-1.29544444)*0.017453292519)]
+# factor_2 = 1 - np.dot(np.asarray(Vobs_ephe_3) , angles)
+# FRQ_DOT_1 = Freq_array[0] * factor_2
+# print(corr_freq_3, FRQ_DOT_1)
+
+#%%
 i=0
 corr_freq_arr=np.zeros(7)
 while i<7:
@@ -413,10 +527,10 @@ plt.plot(jd_to_mjd(Jdate_array),corr_freq_arr,'ro-')
 ax = plt.gca()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 ax.errorbar(jd_to_mjd(Jdate_array), corr_freq_arr, 1/(4096*10.24),fmt='ro')
-plt.plot(jd_to_mjd(Jdate_array),Freq_array,'go-')
-ax = plt.gca()
-ax.get_yaxis().get_major_formatter().set_useOffset(False)
-ax.errorbar(jd_to_mjd(Jdate_array), Freq_array, 1/(4096*10.24),fmt='go')
+# plt.plot(jd_to_mjd(Jdate_array),Freq_array,'go-')
+# ax = plt.gca()
+# ax.get_yaxis().get_major_formatter().set_useOffset(False)
+# ax.errorbar(jd_to_mjd(Jdate_array), Freq_array, 1/(4096*10.24),fmt='go')
 plt.grid(True)
 slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), corr_freq_arr, 1)
 plt.plot(jd_to_mjd(Jdate_array),(slope*jd_to_mjd(Jdate_array))+intercept, 'g')
@@ -433,7 +547,38 @@ plt.ylabel('Frequency [Hz]')
 plt.xlabel('MJD')
 plt.title('Frquency Slow down (Doppler corrected)')
 
+#%% Chi_squared function
+def chi_squared(array,funct):
+    std = np.std(array)
+    i = 0
+    chi_squared=np.zeros(len(array))
+    while i<len(array) :
+        chi_squared[i] = ((funct[i] - array[i] )**2) / std
+        i=i+1
+    chi_squared=np.sum(chi_squared)
+    return chi_squared
 
+linaer_fit = (slope*jd_to_mjd(Jdate_array))+intercept
+CHI_SQ=chi_squared(corr_freq_arr,linaer_fit )
+print(CHI_SQ)
+
+#%% Frequency plot (Corrected)
+plt.plot(jd_to_mjd(Jdate_array),corr_freq_arr,'ro')
+plt.grid(True)
+slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), corr_freq_arr, 1)
+plt.plot(jd_to_mjd(Jdate_array),(slope*jd_to_mjd(Jdate_array))+intercept, 'g')
+textstr = '\n'.join((
+r"Slope Data (corr) = " +str(np.float32(slope)),
+r"Intercept Data (corr) = " +str(np.float32(intercept)),
+r"Reduced CHI Squared(corr) = " +str(np.float32(CHI_SQ))))
+plt.text(0.6,0.7, textstr,fontsize=15,horizontalalignment='left',transform=ax.transAxes,bbox=dict(facecolor='white', alpha=1))
+ax = plt.gca()
+ax.get_yaxis().get_major_formatter().set_useOffset(False)
+ax.errorbar(jd_to_mjd(Jdate_array), corr_freq_arr, 1/(4096*10.24),fmt='ro')
+plt.ylabel('Frequency [Hz]')
+plt.xlabel('MJD')
+plt.title('Frquency Slow down')
+plt.show()
 
 
 
@@ -456,8 +601,15 @@ def logL1(fdot,f): # the log likelihood as a function of fdot and f
     for i in range(0,7):
         sum += (Freq_corr[i] - (fdot*t[i] + f))**2/err**2
     return -sum/2
+def logL2(tau,B): # the log likelihood as a function of B and tau
+# using f = a/B*(2*tau)**(-1/2), fdot = -a/B*(2*tau)**(-3/2) where a = 3.2e-15 and B is in tesla
+    sum = 0
+    for i in range(0,7):
+        sum += (f_obs[i] - (-a/B*(2*tau)**(-3/2)*t[i] + a/B*(2*tau)**(-1/2)))**2/err**2
+    return -sum/2
 
-#%% plot likelyhood
+
+#%% plot likelyhood (f fdot)
 #frequency search box size
 f_width = err*2
 #fdot search box size
@@ -465,7 +617,7 @@ fdot_width = err*2/t[-1]
 # box centre
 f_cent = f_funct(0)
 fdot_cent = (f_funct(500)-f_funct(-500))/(1000)
-boxres=200 #box resolution
+boxres=100 #box resolution
 f_vals = f_cent + np.linspace(-f_width , f_width, boxres)
 fdot_vals = fdot_cent + np.linspace(-fdot_width, fdot_width, boxres)
 X,Y = np.meshgrid(fdot_vals, f_vals)
@@ -481,13 +633,28 @@ plt.xlabel('fdot (Hz/s)')
 plt.ylabel('frequency (Hz)')
 plt.show()
 
-#%%
+# plot Marginals
+pfreq = np.sum(prob,1)
+
+plt.plot(Y[:,0],pfreq)
+plt.xlabel('frequency (Hz)')
+plt.ylabel('$\propto p(f|D)$')
+ax = plt.gca()
+ax.get_xaxis().get_major_formatter().set_useOffset(False)
+plt.show()
+pfdot = np.sum(prob,0)
+plt.plot(X[0,:],pfdot)
+plt.xlabel('fdot (Hz/s)')
+plt.ylabel('$\propto p(\dot{f}|D)$')
+plt.show()
+
+
+#%% 3D plot
 fig = plt.figure(figsize=(8,6))
 ax = fig.add_subplot(1,1,1, projection='3d')
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
-ax.plot_surface(X, Y, prob, alpha=0.4)
+ax.plot_surface(X, Y, prob, alpha=0.3)
 cset = ax.contour(X, Y, prob, zdir='z', cmap='jet')
-ax.view_init(40, 30)
+ax.view_init(30, 30)
 plt.show()
-# cset = ax.contour(X, Y, Z, zdir='x', cmap='jet')
-# cset = ax.contour(X, Y, Z, zdir='y', cmap='jet')
+
