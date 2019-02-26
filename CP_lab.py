@@ -8,6 +8,7 @@ import datetime as dt
 import textwrap
 import astropy
 from mpl_toolkits.mplot3d.axes3d import Axes3D
+from sklearn.metrics import r2_score
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import solar_system_ephemeris, EarthLocation
@@ -462,10 +463,10 @@ print((delay_R/86400))
 plt.plot(t_delay,doppler_freq,'ro-')
 ax = plt.gca()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
-ax.errorbar(t_delay, doppler_freq, (1/(4096*10.24)),fmt='ro')
+ax.errorbar(t_delay, doppler_freq, (1/(4096*10.24)),fmt='ro',ls='none')
 plt.grid(True)
 slope, intercept = np.polyfit(jd_to_mjd(Jdate_array), doppler_freq, 1)
-slope_jb, intercept_jb = np.polyfit(jd_to_mjd(jb_data[:,1]), jb_data[:,0], 1)
+slope_jb, intercept_jb = np.polyfit(jb_data[:,1], jb_data[:,0], 1)
 plt.plot(t_delay,(slope*t_delay)+intercept, 'g')
 plt.plot(jb_data[:,1],jb_data[:,0],'bo-')
 ax = plt.gca()
@@ -479,28 +480,36 @@ plt.text(0.7,0.4, textstr,fontsize=11,horizontalalignment='left',transform=ax.tr
 plt.ylabel('Frequency [Hz]')
 plt.xlabel('MJD')
 plt.title('Frquency Slow down (Doppler corrected)')
-print()
+
 #%% plot residuals doppler vs JB
-JB_slowdown = (float(slope_jb)*jd_to_mjd(t_delay))+float(intercept_jb)
-plt.plot(jd_to_mjd(Jdate_array),(JB_slowdown-(doppler_freq)),'ro-')
-plt.errorbar(jd_to_mjd(Jdate_array), (JB_slowdown-(doppler_freq)), error ,capsize=7,ecolor='r')
+JB_slowdown = (float(slope_jb)*t_delay)+float(intercept_jb)
+plt.plot(jd_to_mjd(Jdate_array),(JB_slowdown-(doppler_freq)),'ko')
+plt.errorbar(jd_to_mjd(Jdate_array), (JB_slowdown-(doppler_freq)), error ,capsize=7,ecolor='k',ls='none')
 plt.ylabel('Frequency Residuals [Hz]')
 plt.xlabel('MJD')
-plt.title('Residual JB/Doppler Frequency')
 plt.grid(True)
-print(jd_to_mjd(Jdate_array))
+#print()
 
 #%% plot JB vs doppler shift frequency zoomed in
+slope, intercept = np.polyfit(t_delay, doppler_freq, 1)
+coefficient_of_dermination = round(r2_score(doppler_freq, float(slope)*t_delay+float(intercept)),7)
+print(slope, intercept,coefficient_of_dermination)
 error = [1/(4096*10.24), 1/(4096*10.24), 1/(4096*10.24), 1/(4096*10.24), 1/(3258*10.24), 1/(4096*10.24),1/(4096*10.24)]
-plt.plot(t_delay,doppler_freq,'ro')
+fig = plt.figure()
+plt.plot(t_delay,doppler_freq,'ko')
+A, = plt.plot(t_delay,float(slope)*t_delay+float(intercept),'r-',label='Best Fit')
 plt.grid(True)
+textstr = "$R^2$ = "+str(float(coefficient_of_dermination))
+plt.text(1,1, textstr,fontsize=16,transform=ax.transAxes, alpha=1)
 ax = plt.gca()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
-plt.errorbar(t_delay, doppler_freq, error ,capsize=7,ecolor='r')
-plt.plot(jd_to_mjd(Jdate_array),JB_slowdown,'b-')
+AAA = plt.errorbar(t_delay, doppler_freq, error ,capsize=7,ecolor='k',ls='none',fmt="ko",label='Experimental Data')
+AA, = plt.plot(t_delay,JB_slowdown,'b-',label = 'Jodrell Bank')
+AAAA, = plt.plot([],[],' ',label='$R^2$ = Coeff. of Determination')
+plt.legend(handles=[A, AA, AAA, AAAA],fontsize=10)
 plt.ylabel('Frequency [Hz]')
 plt.xlabel('MJD')
-print(JB_slowdown)
+fig.savefig(path+'/data/Plots/Slowdown_RatevsJodrell.png', dpi=300, bbox_inches = "tight")
 
 #%% plot  doppler starting from frist observation 
 error = [1/(4096*10.24), 1/(4096*10.24), 1/(4096*10.24), 1/(4096*10.24), 1/(3258*10.24), 1/(4096*10.24),1/(4096*10.24)]
@@ -639,7 +648,7 @@ print(CHI_SQ)
 
 
 #%% likelyhood functions
-
+error = [1/(4096*10.24), 1/(4096*10.24), 1/(4096*10.24), 0.5/(4096*10.24), 1/(3258*10.24), 1/(4096*10.24),1/(4096*10.24)]
 err = error
 Freq_corr = doppler_freq
 epoch = 3 # the index of the epoch of the solution
@@ -651,6 +660,9 @@ fdot=best_f[0]
 f_mu=best_f[1]
 print(fdot)
 print(f_mu)
+print(Freq_corr)
+print(t)
+print(best_f)
 def logL1(fdot,f): # the log likelihood as a function of fdot and f
     sum = 0
     for i in range(0,7):
@@ -682,21 +694,24 @@ def logL5(B,f): # the log likelihood as a function of B and f (see later)
 
 def logL6(B,Q): # the log likelihood as a function of B and Q (see later)
     sum = 0
-    f = (a/2/Q)**0.5
+    f = (a/2/Q)**(0.5)
+    fdot = (B**2)*((2*Q)**(-3/2))*(a**(-1/2))
     for i in range(0,7):
-        sum += (Freq_corr[i] - (-(f*(B**2))/2*Q)*t[i] + f)**2/err[i]**2
+        sum += (Freq_corr[i] - (-fdot*t[i] + f))**2/err[i]**2
     return -sum/2   
 
 def logL7(B,fdot): # the log likelihood as a function of B and fdot (see later)
     sum = 0
+    f = ((a/B)**(2)*abs(fdot))**(1/3)
     for i in range(0,7):
-        sum += (Freq_corr[i] - (-fdot*t[i] + ((a/B)**(2/3))*(fdot**(1/3))))**2/err[i]**2
+        sum += (Freq_corr[i] - (fdot*t[i] + f))**2/err[i]**2
+        #print(f)
     return -sum/2  
 
 def logL8(tau,fdot): # the log likelihood as a function of tau and fdot (see later)
     sum = 0
     for i in range(0,7):
-        sum += (Freq_corr[i] - (-fdot*t[i] + 2*fdot*tau))**2/err[i]**2
+        sum += (Freq_corr[i] - (fdot*t[i] + 2*abs(fdot)*tau))**2/err[i]**2
     return -sum/2  
 
 #%% plot likelyhood (f fdot)
@@ -707,7 +722,7 @@ fdot_width = err[0]*2/t[-1]
 # box centre
 f_cent = f_funct(0)
 fdot_cent = (f_funct(500)-f_funct(-500))/(1000)
-boxres=100 #box resolution
+boxres=200 #box resolution
 f_vals = f_cent + np.linspace(-f_width , f_width, boxres)
 fdot_vals = fdot_cent + np.linspace(-fdot_width, fdot_width, boxres)
 X,Y = np.meshgrid(fdot_vals, f_vals)
@@ -716,28 +731,37 @@ prob = np.exp(Z-Z.max())
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, (0.1, 0.5, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
 cb = fig.colorbar(p)
-plt.xlabel('fdot (Hz/s)')
+plt.xlabel('$\dot{f}$ (Hz/s)')
 plt.ylabel('frequency (Hz)')
 plt.show()
+#fig.savefig(path+'/data/Plots/f_fdot.png', dpi=300, bbox_inches = "tight")
 
-# plot Marginals
+# %%plot f Marginals
 pfreq = np.sum(prob,1)
-
-plt.plot(Y[:,0],pfreq)
+fig = plt.figure()
+plt.plot(Y[:,0],pfreq,'k')
+plt.grid(True)
 plt.xlabel('frequency (Hz)')
 plt.ylabel('$\propto p(f|D)$')
 ax = plt.gca()
 ax.get_xaxis().get_major_formatter().set_useOffset(False)
 plt.show()
+fig.savefig(path+'/data/Plots/f_marginal.png',dpi=300, bbox_inches = "tight")
+# %%plot fdot  Marginals
 pfdot = np.sum(prob,0)
-plt.plot(X[0,:],pfdot)
-plt.xlabel('fdot (Hz/s)')
+fig = plt.figure()
+plt.plot(X[0,:],pfdot,'k')
+plt.grid(True)
+plt.xlabel('$\dot{f}$ (Hz/s)')
 plt.ylabel('$\propto p(\dot{f}|D)$')
 plt.show()
+#fig.savefig(path+'/data/Plots/fdot_marginal.png', dpi=300, bbox_inches = "tight")
 
+f_dot_FWHM = FullWHM(pfdot,X[0,:])
+print(f_dot_FWHM)
 
 #%% 3D plot
 fig = plt.figure(figsize=(8,6))
@@ -766,42 +790,42 @@ prob = np.exp( (Z-Z.max())/1e9) # soften the prob by a large factor to let it sh
 fig, ax = plt.subplots()
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
+cb.ax.set_ylabel('Prior prbability', rotation=270,labelpad=15)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
 plt.xlabel('characteristic age, $\\tau $, (s)')
 plt.ylabel('magnetic field, $B$, (T)')
 plt.show()
+fig.savefig(path+'/data/Plots/B_tau.png', dpi=300, bbox_inches = "tight")
 
 
 #%%Try the Q-tau plane, where Q = B**2 * tau =  a/2/f**2
 # box centre
 Q_cent = a/2/f_cent**2
 tau_cent = -f_cent/2/fdot_cent
-
 #B search box size
 Q_width = 3e-6*Q_cent
 #tau search box size
 tau_width = 0.1*tau_cent
-boxres = 100 # number of pixels in each axis
+boxres = 200 # number of pixels in each axis
 Q_vals = Q_cent + np.linspace(-Q_width , Q_width, boxres)
 tau_vals = tau_cent + np.linspace(-tau_width, tau_width, boxres)
 X,Y = np.meshgrid(tau_vals, Q_vals)
 Z = logL3(X, Y)
 prob = np.exp(Z-Z.max())
-
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
+cb.ax.set_ylabel('Prior prbability', rotation=270,labelpad=15)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, (0.1, 0.2, 0.4, 0.66, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
 plt.xlabel('characteristic age, $\\tau $, (s)')
 plt.ylabel('$Q$')
 plt.show()
-
-
+#fig.savefig(path+'/data/Plots/Q_tau.png', dpi=300, bbox_inches = "tight")
 #%% Try f-tau plane
 # box centre
 tau_cent = -f_cent/2/fdot_cent
@@ -810,43 +834,56 @@ f_cent = f_funct(0)
 f_width = err[0]*2
 #tau search box size
 tau_width = 0.1*tau_cent
-boxres = 100 # number of pixels in each axis
+boxres = 200 # number of pixels in each axis
 f_vals = f_cent + np.linspace(-f_width , f_width, boxres)
 tau_vals = tau_cent + np.linspace(-tau_width, tau_width, boxres)
 X,Y = np.meshgrid(tau_vals, f_vals)
 Z = logL4(X, Y)
-prob = np.exp(Z-Z.max())
+prob_Qt = np.exp(Z-Z.max())
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
+cb.ax.set_ylabel('Prior prbability', rotation=270,labelpad=15)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, ( 0.2, 0.5, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
 plt.xlabel('characteristic age, $\\tau $, (s)')
 plt.ylabel('frequency (Hz)')
 plt.show()
-
+#fig.savefig(path+'/data/Plots/f_tau.png', dpi=300, bbox_inches = "tight")
 # unnormalised marginal for tau:
 ptau = np.sum(prob,1)
 fig, ax = plt.subplots()
-plt.plot(X[1,:],ptau)
+plt.grid(True)
+plt.plot(X[1,:],ptau,'k')
 plt.xlabel('characteristic age, $\\tau $, (s)')
 plt.ylabel('$\\propto p(\\tau | D)$')
 plt.show()
-
+fig.savefig(path+'/data/Plots/tau_f_marginal.png', dpi=300, bbox_inches = "tight")
 #%% normalised marginal for tau:
-ptau2 = np.sum(prob,1)
+ptau2 = np.sum(prob_Qt,1)
 dtau = X[1,1]-X[1,0] # the width of a tau bin
-
 fig, ax = plt.subplots()
-tauf, = plt.plot(X[1,:],ptau2/np.sum(ptau2)/dtau, label='uniform prior in $\\tau,f$') # result from this marginalisation
-tauq, = plt.plot(X[1,:],ptau/np.sum(ptau)/dtau, label='uniform prior in $\\tau,Q$')  # previous result, marginalising over Q
+tauf, = plt.plot(X[1,:],ptau2/np.sum(ptau2)/dtau, 'b',label='uniform prior in $\\tau,f$') # result from this marginalisation
+tauq, = plt.plot(X[1,:],ptau/np.sum(ptau)/dtau,'r', label='uniform prior in $\\tau,Q$')  # previous result, marginalising over Q
+diff, = plt.plot([],[],' ',label='rel. peak diff. < 1%')
+plt.grid(True)
 plt.xlabel('characteristic age, $\\tau $, (s)')
-plt.ylabel('$p(\\tau | D)$')
-plt.legend(handles=[tauf, tauq])
+plt.ylabel('$\\propto p(\\tau | D)$')
+plt.legend(handles=[tauf, tauq, diff])
 plt.show()
+#fig.savefig(path+'/data/Plots/tauf_tauQ_marginals.png', dpi=300, bbox_inches = "tight")
 
+#%%
+tau1 = ptau2
+tau2 = ptau
+n_ptau2 = Max_Inx(tau1)
+n_ptau = Max_Inx(tau2)
+diff = X[0][n_ptau2] - X[0][n_ptau]
+print(tau1)
+print(n_ptau2)
+#print(X[0][n_ptau2])
 #%% plot rsiduals of normalised marginals for tau 
 plt.plot(X[2,:],(ptau2/np.sum(ptau2)/dtau)-(ptau/np.sum(ptau)/dtau))
 plt.show()
@@ -854,7 +891,8 @@ plt.show()
 
 #%% try the B-f plane
 # box centre
-B_cent = a*(-fdot_cent/f_cent**3)**0.5
+B_cent = a*(-(fdot_cent)/(f_cent)**3)**0.5
+print(B_cent)
 f_cent = f_funct(0)
 #B search box size
 B_width = 0.1*B_cent
@@ -872,27 +910,28 @@ ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, (0.1, 0.2, 0.4, 0.66, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
 plt.xlabel('magnetic field, $B$, (T)')
 plt.ylabel('frequency (Hz)')
 plt.show()
-
-#%% unnormalised marginal for B:
+#fig.savefig(path+'/data/Plots/B_f.png', dpi=300, bbox_inches = "tight")
+# unnormalised marginal for B:
 pB = np.sum(prob,1)
 fig, ax = plt.subplots()
-plt.plot(X[1,:],pB)
+plt.grid(True)
+plt.plot(X[0,:],pB,'k')
 plt.xlabel('magnetic field, $B$, (T)')
 plt.ylabel('$\\propto p(\\ B | D)$')
 plt.show()
-
+fig.savefig(path+'/data/Plots/B_f_marginal.png', dpi=300, bbox_inches = "tight")
 
 
 #%%Try the Q-B plane, where Q = B**2 * tau =  a/2/f**2
 # box centre
 Q_cent = a/2/f_cent**2
-B_cent = a*(-fdot_cent/f_cent**3)**0.5
-
+#B_cent = a*(-(fdot_cent)/f_cent**3)**0.5
+#print(B_cent)
 #Q search box size
 Q_width = 3e-6*Q_cent
 #B search box size
@@ -902,18 +941,50 @@ Q_vals = Q_cent + np.linspace(-Q_width , Q_width, boxres)
 B_vals = B_cent + np.linspace(-B_width , B_width, boxres)
 X,Y = np.meshgrid(B_vals, Q_vals)
 Z = logL6(X, Y)
-prob = np.exp(Z-Z.max())
-
+prob = np.exp( (Z-Z.max()))
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
-ax.clabel(cm, inline=True)
+cm = ax.contour(X, Y, prob, (0.1, 0.5, 0.8),alpha=1,linewidths=2)
+ax.clabel(cm)
 plt.xlabel('magnetic field, $B$, (T)')
 plt.ylabel('$Q$')
 plt.show()
+fig.savefig(path+'/data/Plots/Q_B.png', dpi=300, bbox_inches = "tight")
+# unnormalised marginal for B:
+pB1 = np.sum(prob,1)
+fig, ax = plt.subplots()
+plt.plot(X[0,:],pB1,'k')
+plt.grid(True)
+plt.xlabel('magnetic field, $B$, (T)')
+plt.ylabel('$\\propto p(\\ B | D)$')
+plt.show()
+
+#%% plot posteriors of B
+dB = X[1,1]-X[1,0]
+fig, ax = plt.subplots()
+plt.grid(True)
+AA, = plt.plot(X[0,:],pB/np.sum(pB)/dB,'b',label='uniform prior in $B,f$')
+A, = plt.plot(X[0,:],pB1/np.sum(pB1)/dB,'r',label='uniform prior in $B,Q$')
+AAA, = plt.plot([],[], ' ', label = 'rel. peak diff. < 1%')
+plt.xlabel('magnetic field, $B$, (T)')
+plt.ylabel('$\\propto p(\\ B | D)$')
+plt.legend(handles=[A, AA,AAA])
+plt.show()
+fig.savefig(path+'/data/Plots/Bf_BQ_marginals.png', dpi=300, bbox_inches = "tight")
+
+
+#%% plot posteriors of B
+
+fig, ax = plt.subplots()
+pBf= plt.plot(X[1,:],pB/np.sum(pB)/dB) # result from this marginalisation
+pB1Q= plt.plot(X[1,:],pB1/np.sum(pB1)/dB)  # previous result, marginalising over Q
+plt.xlabel('characteristic age, $B$, (s)')
+plt.ylabel('$p(B | D)$')
+plt.show()
+
 
 #%% try the B-fdot plane
 # box centre
@@ -923,25 +994,24 @@ fdot_cent = (f_funct(500)-f_funct(-500))/(1000)
 B_width = 0.1*B_cent
 #fdot search box size
 fdot_width = err[0]*2/t[-1]
-boxres = 100 # number of pixels in each axis
+boxres = 200 # number of pixels in each axis
 B_vals = B_cent + np.linspace(-B_width , B_width, boxres)
 fdot_vals = fdot_cent + np.linspace(-fdot_width, fdot_width, boxres)
 X,Y = np.meshgrid(B_vals, fdot_vals)
 Z = logL7(X, Y)
 #prob = np.exp( (Z-Z.max()))
-prob = np.exp( (Z-Z.max())) # soften the prob by a large factor to let it show better
-print(prob)
-#%%
+prob = np.exp( (Z-Z.max())/1e9) # soften the prob by a large factor to let it show better
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, (0.1, 0.2, 0.4, 0.66, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
-plt.xlabel('magnetic field, $B$, (T)')
-plt.ylabel('fdot (Hz)')
+plt.xlabel('magnetic field, $B$ (T)')
+plt.ylabel('$\dot{f}$ (Hz/s)')
 plt.show()
+fig.savefig(path+'/data/Plots/B_fdot.png', dpi=300, bbox_inches = "tight")
 
 #%% Try fdot-tau plane
 # box centre
@@ -951,19 +1021,43 @@ fdot_cent = (f_funct(500)-f_funct(-500))/(1000)
 fdot_width = err[0]*2/t[-1]
 #tau search box size
 tau_width = 0.1*tau_cent
-boxres = 100 # number of pixels in each axis
+boxres = 200 # number of pixels in each axis
 fdot_vals = fdot_cent + np.linspace(-fdot_width, fdot_width, boxres)
 tau_vals = tau_cent + np.linspace(-tau_width, tau_width, boxres)
 X,Y = np.meshgrid(tau_vals, fdot_vals)
 Z = logL8(X, Y)
-prob = np.exp(Z-Z.max())*1e-9
+prob = np.exp( (Z-Z.max())/1e10)
 fig, ax = plt.subplots()
 ax.get_yaxis().get_major_formatter().set_useOffset(False)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
 cb = fig.colorbar(p)
 p = ax.pcolor(X, Y, prob, cmap='jet', vmin=prob.min(), vmax=prob.max())
-cm = ax.contour(X, Y, prob, np.arange(0,1,0.2),alpha=1,linewidths=2)
+cm = ax.contour(X, Y, prob, (0.1, 0.2, 0.4, 0.66, 0.9),alpha=1,linewidths=2)
 ax.clabel(cm, inline=True)
-plt.xlabel('characteristic age, $\\tau $, (s)')
-plt.ylabel('fdot (Hz/s)')
+plt.xlabel('characteristic age, $\\tau $ (s)')
+plt.ylabel('$\dot{f}$ (Hz/s)')
+fig.savefig(path+'/data/Plots/tau_fdot.png', dpi=300, bbox_inches = "tight")
 plt.show()
+
+
+#%% Function for FWHM
+def FullWHM(array,x):
+    peak = Max_Inx(array) 
+    i=0
+    l = len(array)
+    while i < l :
+        if array[i] == array[peak]*0.5 :     
+            FWHM_inx = i  
+            break 
+          
+        i += 1    
+         
+    n1 = peak - FWHM_inx
+    n2 = peak + FWHM_inx
+    FWHM = x[n2]-x[n1]
+    return FWHM
+
+#%%    
+ABC = np.asarray([0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0])
+XXX = np.asarray([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+print(FullWHM(ABC,XXX))
